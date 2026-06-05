@@ -319,24 +319,7 @@ function App() {
           <div className="divider-dot"></div>
 
           <div className="interactive-icons">
-            <a
-              href="https://linkedin.com/in/deep-rajput-a1b4142a7"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="icon-btn"
-              title="LinkedIn"
-            >
-              <i className="fa-brands fa-linkedin-in"></i>
-            </a>
-            <a
-              href="https://github.com/DeepRajput7"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="icon-btn"
-              title="GitHub"
-            >
-              <i className="fa-brands fa-github"></i>
-            </a>
+
             <button
               className={`icon-btn ${soundEnabled ? "active-sound" : ""}`}
               onClick={toggleSound}
