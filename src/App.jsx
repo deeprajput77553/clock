@@ -36,14 +36,25 @@ function App() {
   const [orbsEnabled, setOrbsEnabled] = useState(true);
   const [accentColor, setAccentColor] = useState("#ff3e3e");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [matrixEnabled, setMatrixEnabled] = useState(true);
 
-  // ── Bottom Panel State ──
+  // ── Collapsible Bottom Panel State ──
   const [panelOpen, setPanelOpen] = useState(false);
-  const [batteryLevel, setBatteryLevel] = useState("—%");
-  const [batteryIconClass, setBatteryIconClass] = useState("fa-solid fa-battery-three-quarters status-icon");
+
+  // ── Battery Widget State ──
+  const [batteryPercent, setBatteryPercent] = useState(100);
+  const [batteryIsCharging, setBatteryIsCharging] = useState(false);
   const [batteryIconColor, setBatteryIconColor] = useState("");
-  const [weatherTemp, setWeatherTemp] = useState("—°C");
-  const [weatherIconClass, setWeatherIconClass] = useState("fa-solid fa-cloud-sun status-icon");
+
+  // ── Weather Widget State ──
+  const [weatherData, setWeatherData] = useState({
+    temp: "—°C",
+    status: "LOADING...",
+    iconClass: "fa-solid fa-cloud-sun weather-icon-card",
+    high: "—",
+    low: "—",
+    wind: "—"
+  });
 
   // ── Refs ──
   const dialOuterRef = useRef(null);
@@ -165,27 +176,15 @@ function App() {
 
     const applyBattery = (battery) => {
       const lvl = Math.round(battery.level * 100);
-      setBatteryLevel(lvl + "%");
+      setBatteryPercent(lvl);
+      setBatteryIsCharging(battery.charging);
       
-      let icon = "fa-solid fa-battery-three-quarters status-icon";
       let color = "";
-
       if (battery.charging) {
-        icon = "fa-solid fa-battery-bolt status-icon";
         color = "var(--accent)";
-      } else if (lvl > 75) {
-        icon = "fa-solid fa-battery-full status-icon";
-      } else if (lvl > 40) {
-        icon = "fa-solid fa-battery-three-quarters status-icon";
-      } else if (lvl > 20) {
-        icon = "fa-solid fa-battery-quarter status-icon";
+      } else if (lvl <= 20) {
         color = "#ffb700";
-      } else {
-        icon = "fa-solid fa-battery-empty status-icon";
-        color = "var(--accent)";
       }
-
-      setBatteryIconClass(icon);
       setBatteryIconColor(color);
     };
 
@@ -201,7 +200,7 @@ function App() {
         bat.addEventListener("chargingchange", onChargingChange);
       });
     } else {
-      setBatteryLevel("100%");
+      setBatteryPercent(100);
     }
 
     return () => {
@@ -212,36 +211,85 @@ function App() {
     };
   }, []);
 
-  // ── 5. Geolocation Weather Fetcher ──
+  // ── 5. Detailed Geolocation Weather Fetcher ──
   useEffect(() => {
     const fetchWeather = (lat, lon) => {
-      fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`)
+      fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&daily=weathercode,temperature_2m_max,temperature_2m_min&timezone=auto`)
         .then((r) => r.json())
         .then((data) => {
           const temp = Math.round(data.current_weather.temperature);
           const code = data.current_weather.weathercode;
-          setWeatherTemp(temp + "°C");
+          const maxTemp = Math.round(data.daily.temperature_2m_max[0]);
+          const minTemp = Math.round(data.daily.temperature_2m_min[0]);
+          const wind = Math.round(data.current_weather.windspeed);
 
-          if (code === 0) setWeatherIconClass("fa-solid fa-sun status-icon");
-          else if (code <= 3) setWeatherIconClass("fa-solid fa-cloud-sun status-icon");
-          else if (code <= 67) setWeatherIconClass("fa-solid fa-cloud-rain status-icon");
-          else if (code <= 77) setWeatherIconClass("fa-solid fa-snowflake status-icon");
-          else setWeatherIconClass("fa-solid fa-bolt status-icon");
+          // Code mapping
+          let statusText = "CLEAR";
+          let icon = "fa-solid fa-sun weather-icon-card";
+
+          if (code === 0) {
+            statusText = "CLEAR";
+            icon = "fa-solid fa-sun weather-icon-card";
+          } else if (code <= 3) {
+            statusText = "CLOUDY";
+            icon = "fa-solid fa-cloud-sun weather-icon-card";
+          } else if (code <= 48) {
+            statusText = "FOGGY";
+            icon = "fa-solid fa-smog weather-icon-card";
+          } else if (code <= 67) {
+            statusText = "RAINY";
+            icon = "fa-solid fa-cloud-rain weather-icon-card";
+          } else if (code <= 77) {
+            statusText = "SNOWY";
+            icon = "fa-solid fa-snowflake weather-icon-card";
+          } else {
+            statusText = "STORM";
+            icon = "fa-solid fa-bolt weather-icon-card";
+          }
+
+          setWeatherData({
+            temp: temp + "°C",
+            status: statusText,
+            iconClass: icon,
+            high: maxTemp + "°",
+            low: minTemp + "°",
+            wind: wind + " km/h"
+          });
         })
         .catch(() => {
-          setWeatherTemp("—°C");
+          setWeatherData(prev => ({ ...prev, status: "ERROR", temp: "—°C" }));
         });
     };
 
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => fetchWeather(pos.coords.latitude, pos.coords.longitude),
-        () => setWeatherTemp("—°C")
+        () => setWeatherData(prev => ({ ...prev, status: "NO GPS", temp: "—°C" }))
       );
+    } else {
+      setWeatherData(prev => ({ ...prev, status: "UNSUPPORTED" }));
     }
   }, []);
 
-  // Sound handler for interactive icon click (syncs with toggle check)
+  // ── 6. Month Calendar Day Matrix Helper ──
+  const getCalendarDays = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const firstDayIndex = new Date(year, month, 1).getDay(); // 0-6 (Sun-Sat)
+    const totalDays = new Date(year, month + 1, 0).getDate();
+    
+    const days = [];
+    for (let i = 0; i < firstDayIndex; i++) {
+      days.push({ dayNum: "", isEmpty: true });
+    }
+    const today = now.getDate();
+    for (let i = 1; i <= totalDays; i++) {
+      days.push({ dayNum: i, isEmpty: false, isToday: i === today });
+    }
+    return days;
+  };
+
   const toggleSound = () => {
     ensureAudio();
     const nextSound = !soundEnabled;
@@ -258,8 +306,14 @@ function App() {
     "--accent-glow": `${accentColor}40`
   };
 
+  const batteryCircumference = 2 * Math.PI * 32;
+  const batteryOffset = batteryCircumference * (1 - batteryPercent / 100);
+
   return (
     <div className="clock-screen" style={containerStyle}>
+      {/* Dynamic Screen Matrix LCD Pixel overlay filter */}
+      <div className={`matrix-overlay ${!matrixEnabled ? "matrix-hidden" : ""}`}></div>
+
       {/* Background elements */}
       <div className="grid-background"></div>
       <div className={`glow-orb ${!orbsEnabled ? "orbs-hidden" : ""}`} id="orb-1"></div>
@@ -290,10 +344,146 @@ function App() {
         </div>
       </div>
 
-      {/* Date info panel */}
-      <div className="date-container">
-        <div className="date-text" id="date-val">{dateText}</div>
-        <div className="day-text" id="day-val">{dayText}</div>
+      {/* Widgets Dashboard Grid Sidebar */}
+      <div className="widgets-container">
+        {/* Widget 1: Calendar */}
+        <div className="widget-card widget-span-2">
+          <div className="widget-header">
+            <span>Calendar</span>
+            <i className="fa-regular fa-calendar-days"></i>
+          </div>
+          <div className="widget-body calendar-widget-body">
+            <div className="calendar-date-row">
+              <div className="calendar-day-matrix">{dayText}</div>
+              <div className="calendar-full-date">{dateText}</div>
+            </div>
+            <div className="calendar-grid">
+              {["SU", "MO", "TU", "WE", "TH", "FR", "SA"].map((d) => (
+                <div key={d} className="calendar-day-label">{d}</div>
+              ))}
+              {getCalendarDays().map((d, index) => (
+                <div
+                  key={index}
+                  className={`calendar-day ${d.isEmpty ? "empty" : ""} ${d.isToday ? "active" : ""}`}
+                >
+                  {d.dayNum}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Widget 2: Weather */}
+        <div className="widget-card">
+          <div className="widget-header">
+            <span>Weather</span>
+            <i className="fa-solid fa-cloud-sun"></i>
+          </div>
+          <div className="widget-body">
+            <div className="weather-widget-body">
+              <i className={weatherData.iconClass}></i>
+              <div className="weather-temp-large">{weatherData.temp}</div>
+            </div>
+            <div className="weather-status-text">{weatherData.status}</div>
+            <div className="weather-specs">
+              <div className="weather-spec-item">
+                <span className="weather-spec-label">H/L</span>
+                <span>{weatherData.high} / {weatherData.low}</span>
+              </div>
+              <div className="weather-spec-item">
+                <span className="weather-spec-label">Wind</span>
+                <span>{weatherData.wind}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Widget 3: Battery */}
+        <div className="widget-card">
+          <div className="widget-header">
+            <span>Battery</span>
+            <i className="fa-solid fa-battery-three-quarters"></i>
+          </div>
+          <div className="widget-body">
+            <div className="battery-widget-container">
+              <svg width="76" height="76" viewBox="0 0 76 76" className="battery-svg-ring">
+                <circle className="battery-ring-bg" cx="38" cy="38" r="32" strokeWidth="4.5" />
+                <circle
+                  className="battery-ring-fg"
+                  cx="38" cy="38" r="32"
+                  strokeWidth="4.5"
+                  strokeDasharray={batteryCircumference}
+                  strokeDashoffset={batteryOffset}
+                />
+              </svg>
+              <div className="battery-text-center">
+                <span>{batteryPercent}%</span>
+                {batteryIsCharging && (
+                  <i className="fa-solid fa-bolt battery-charge-icon"></i>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Widget 4: Quick Controls */}
+        <div className="widget-card widget-span-2">
+          <div className="widget-header">
+            <span>Quick Settings</span>
+            <i className="fa-solid fa-sliders"></i>
+          </div>
+          <div className="widget-body">
+            <div className="quick-toggles-grid">
+              {/* 24h toggle */}
+              <div className="quick-toggle-container">
+                <button
+                  className={`quick-toggle-btn ${use24h ? "active" : ""}`}
+                  onClick={() => setUse24h(!use24h)}
+                  title="Toggle 24-Hour Format"
+                >
+                  <i className="fa-regular fa-clock"></i>
+                </button>
+                <span className="quick-toggle-label">{use24h ? "24H" : "12H"}</span>
+              </div>
+
+              {/* Tick sound toggle */}
+              <div className="quick-toggle-container">
+                <button
+                  className={`quick-toggle-btn ${soundEnabled ? "active-accent" : ""}`}
+                  onClick={toggleSound}
+                  title="Toggle Tick Audio"
+                >
+                  <i className={soundEnabled ? "fa-solid fa-volume-high" : "fa-solid fa-volume-xmark"}></i>
+                </button>
+                <span className="quick-toggle-label">Tick</span>
+              </div>
+
+              {/* Ambient Glow Orbs toggle */}
+              <div className="quick-toggle-container">
+                <button
+                  className={`quick-toggle-btn ${orbsEnabled ? "active" : ""}`}
+                  onClick={() => setOrbsEnabled(!orbsEnabled)}
+                  title="Toggle Glow Orbs"
+                >
+                  <i className="fa-solid fa-circle-half-stroke"></i>
+                </button>
+                <span className="quick-toggle-label">Glow</span>
+              </div>
+
+              {/* Screen Matrix overlay toggle */}
+              <div className="quick-toggle-container">
+                <button
+                  className={`quick-toggle-btn ${matrixEnabled ? "active" : ""}`}
+                  onClick={() => setMatrixEnabled(!matrixEnabled)}
+                  title="Toggle LCD Matrix Filter"
+                >
+                  <i className="fa-solid fa-border-all"></i>
+                </button>
+                <span className="quick-toggle-label">Matrix</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Collapsible Status & Navigation Capsule */}
@@ -307,28 +497,25 @@ function App() {
         </button>
 
         <div className="panel-contents">
+          {/* Detailed Battery indicator */}
           <div className="status-group">
             <i
-              className={batteryIconClass}
+              className={batteryIsCharging ? "fa-solid fa-battery-bolt status-icon" : "fa-solid fa-battery-three-quarters status-icon"}
               id="battery-icon"
               style={{ color: batteryIconColor }}
             ></i>
-            <span className="status-text" id="battery-level">{batteryLevel}</span>
+            <span className="status-text" id="battery-level">{batteryPercent}%</span>
           </div>
 
           <div className="divider-dot"></div>
 
           <div className="interactive-icons">
-
             <button
               className={`icon-btn ${soundEnabled ? "active-sound" : ""}`}
               onClick={toggleSound}
               title="Toggle Tick Sound"
             >
-              <i
-                className={soundEnabled ? "fa-solid fa-volume-high" : "fa-solid fa-volume-xmark"}
-                id="sound-icon"
-              ></i>
+              <i className={soundEnabled ? "fa-solid fa-volume-high" : "fa-solid fa-volume-xmark"}></i>
             </button>
             <button
               className="icon-btn"
@@ -341,9 +528,10 @@ function App() {
 
           <div className="divider-dot"></div>
 
+          {/* Detailed Weather spec */}
           <div className="status-group">
-            <i className={weatherIconClass} id="weather-icon"></i>
-            <span className="status-text" id="weather-val">{weatherTemp}</span>
+            <i className={weatherData.iconClass} id="weather-icon"></i>
+            <span className="status-text" id="weather-val">{weatherData.temp}</span>
           </div>
         </div>
       </div>
@@ -429,6 +617,20 @@ function App() {
                 }}
               />
               <label htmlFor="sound-setting-toggle" className="switch-slider"></label>
+            </div>
+          </div>
+
+          {/* Matrix Screen filter Toggle */}
+          <div className="setting-item setting-row">
+            <label>LCD Pixel Matrix Filter</label>
+            <div className="toggle-switch">
+              <input
+                type="checkbox"
+                id="matrix-setting-toggle"
+                checked={matrixEnabled}
+                onChange={(e) => setMatrixEnabled(e.target.checked)}
+              />
+              <label htmlFor="matrix-setting-toggle" className="switch-slider"></label>
             </div>
           </div>
         </div>

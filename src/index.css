@@ -201,29 +201,276 @@ body {
     color: var(--grey-mid);
 }
 
-/* ── Date panel ── */
-.date-container {
+/* ── Widgets Container & Layout ── */
+.widgets-container {
     position: absolute;
-    right: 120px;
+    right: 80px;
     top: 50%;
     transform: translateY(-50%);
-    text-align: right;
+    width: 380px;
+    max-height: 85vh;
+    overflow-y: auto;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
     z-index: 20;
+    scrollbar-width: none;
+    padding: 10px;
 }
-.date-text {
-    font-family: var(--font-body);
-    font-size: 1rem;
-    font-weight: 300;
-    letter-spacing: 5px;
+.widgets-container::-webkit-scrollbar { display: none; }
+
+.widget-card {
+    background: rgba(255, 255, 255, 0.02);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    transition: transform 0.25s var(--ease-out), border-color 0.25s ease, box-shadow 0.25s ease;
+    box-shadow: inset 0 0 12px rgba(255, 255, 255, 0.01);
+}
+.widget-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(255, 255, 255, 0.15);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5), inset 0 0 12px rgba(255, 255, 255, 0.02);
+}
+.widget-span-2 {
+    grid-column: span 2;
+}
+
+.widget-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    color: var(--grey-mid);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+}
+.widget-body {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+}
+
+/* ── Calendar Widget Specifics ── */
+.calendar-widget-body {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.calendar-date-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+}
+.calendar-day-matrix {
+    font-family: var(--font-head);
+    font-size: 1.8rem;
+    font-weight: 800;
+    color: var(--white);
+    letter-spacing: 1px;
+}
+.calendar-full-date {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
     color: var(--grey-hi);
 }
-.day-text {
-    font-family: var(--font-head);
-    font-size: clamp(1.4rem, 2.5vw, 2rem);
-    font-weight: 800;
-    letter-spacing: 4px;
+.calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+    margin-top: 10px;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    text-align: center;
+    border-top: 1px solid var(--border);
+    padding-top: 10px;
+}
+.calendar-day-label {
+    color: var(--grey-mid);
+    font-weight: 700;
+    font-size: 0.62rem;
+    margin-bottom: 2px;
+}
+.calendar-day {
+    padding: 4px 0;
+    color: var(--grey-hi);
+    border-radius: 50%;
+    transition: all 0.2s;
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.calendar-day.active {
+    background: var(--accent);
     color: var(--white);
+    font-weight: 700;
+    box-shadow: 0 0 10px var(--accent-glow);
+}
+.calendar-day.empty {
+    opacity: 0.15;
+}
+
+/* ── Weather Widget Specifics ── */
+.weather-widget-body {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 4px;
+}
+.weather-icon-card {
+    font-size: 1.8rem;
+    color: var(--accent);
+    filter: drop-shadow(0 0 6px var(--accent-glow));
+}
+.weather-temp-large {
+    font-family: var(--font-head);
+    font-size: 1.7rem;
+    font-weight: 800;
+    color: var(--white);
+}
+.weather-status-text {
+    font-family: var(--font-body);
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--grey-hi);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-top: 2px;
+}
+.weather-specs {
     margin-top: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    color: var(--grey-hi);
+    border-top: 1px solid var(--border);
+    padding-top: 6px;
+}
+.weather-spec-item {
+    display: flex;
+    justify-content: space-between;
+}
+.weather-spec-label {
+    color: var(--grey-mid);
+}
+
+/* ── Battery Widget Specifics ── */
+.battery-widget-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    height: 76px;
+    margin-top: 6px;
+}
+.battery-svg-ring {
+    transform: rotate(-90deg);
+}
+.battery-ring-bg {
+    stroke: rgba(255, 255, 255, 0.04);
+    fill: none;
+}
+.battery-ring-fg {
+    fill: none;
+    stroke: var(--accent);
+    stroke-linecap: round;
+    transition: stroke-dashoffset 0.35s ease, stroke 0.3s ease;
+}
+.battery-text-center {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    font-family: var(--font-mono);
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--white);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+}
+.battery-charge-icon {
+    font-size: 0.65rem;
+    color: var(--accent);
+    margin-top: 2px;
+}
+
+/* ── Quick Controls Widget Specifics ── */
+.quick-toggles-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin-top: 6px;
+}
+.quick-toggle-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+.quick-toggle-btn {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border);
+    color: var(--grey-hi);
+    border-radius: 50%;
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 0.95rem;
+}
+.quick-toggle-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--white);
+    transform: scale(1.05);
+}
+.quick-toggle-btn.active {
+    background: var(--white);
+    color: #000;
+    border-color: var(--white);
+    box-shadow: 0 0 10px rgba(255, 255, 255, 0.25);
+}
+.quick-toggle-btn.active-accent {
+    background: var(--accent);
+    color: var(--white);
+    border-color: var(--accent);
+    box-shadow: 0 0 12px var(--accent-glow);
+}
+.quick-toggle-label {
+    font-family: var(--font-mono);
+    font-size: 0.52rem;
+    color: var(--grey-mid);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    text-align: center;
+}
+
+/* ── Matrix Overlay Screen Filter ── */
+.matrix-overlay {
+    position: fixed; inset: 0;
+    background: radial-gradient(rgba(0, 0, 0, 0) 1.5px, rgba(0, 0, 0, 0.35) 2px);
+    background-size: 5px 5px;
+    z-index: 9999;
+    pointer-events: none;
+    opacity: 0.22;
+    transition: opacity 0.3s ease;
+}
+.matrix-overlay.matrix-hidden {
+    opacity: 0 !important;
 }
 
 /* ══════════════════════════════════════════════
@@ -448,8 +695,82 @@ input:checked + .switch-slider::before { transform: translateX(22px); }
 /* ══════════════════════════════════════════════
    RESPONSIVE
 ══════════════════════════════════════════════ */
+@media (max-width: 1024px) {
+    .clock-screen {
+        overflow-y: auto;
+        height: auto;
+        min-height: 100vh;
+        align-items: center;
+        padding: 36px 20px 100px;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-start;
+    }
+    .clock-core {
+        margin: 60px 0;
+        min-height: 360px;
+        justify-content: center;
+        width: 100%;
+        position: relative;
+        flex: none;
+    }
+    .hour-display {
+        position: relative;
+        left: auto;
+        text-align: center;
+        margin-right: 140px;
+    }
+    .selection-capsule {
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
+        top: 50%;
+    }
+    .dials-container {
+        left: 50%;
+        transform: translate(-50%, -50%);
+    }
+    .widgets-container {
+        position: relative;
+        right: auto; top: auto;
+        transform: none;
+        width: 100%;
+        max-height: none;
+        margin-top: 20px;
+        grid-template-columns: 1fr 1fr;
+        padding: 0;
+    }
+    .bottom-panel {
+        bottom: 0;
+        position: fixed;
+    }
+}
+
 @media (max-width: 768px) {
-    .clock-screen { padding: 36px 24px 28px; }
-    .date-container { top: auto; bottom: 120px; transform: none; right: 24px; }
-    .settings-drawer { padding: 12px 20px 30px; }
+    .widgets-container {
+        grid-template-columns: 1fr;
+    }
+    .widget-span-2 {
+        grid-column: span 1;
+    }
+    .hour-display {
+        margin-right: 0;
+        margin-bottom: 20px;
+    }
+    .selection-capsule {
+        position: relative;
+        left: auto;
+        transform: none;
+        top: auto;
+        margin-top: 15px;
+    }
+    .clock-core {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        min-height: auto;
+    }
+    .settings-drawer {
+        padding: 12px 20px 30px;
+    }
 }
