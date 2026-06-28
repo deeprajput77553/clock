@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useRef } from "react";
+import InteractiveGrid from "./components/InteractiveGrid";
 
-// Ticks subcomponent for performance & cleaner JSX structure
-const DialTicks = ({ radius, isInner }) => {
+// Ticks subcomponent with active tick glowing
+const DialTicks = ({ radius, isInner, activeVal }) => {
   return Array.from({ length: 60 }).map((_, i) => {
     const isMajor = i % 5 === 0;
+    const isActive = i === activeVal;
     return (
       <div
         key={i}
-        className={isMajor ? "tick major" : "tick"}
+        className={`${isMajor ? "tick major" : "tick"} ${isActive ? "active-tick" : ""}`}
         style={{
           transform: `translate(-50%, -50%) rotate(${i * 6}deg) translateY(-${radius}px)`
         }}
@@ -17,9 +19,51 @@ const DialTicks = ({ radius, isInner }) => {
             {String(i).padStart(2, "0")}
           </span>
         )}
+        {isActive && <div className="tick-glow-dot"></div>}
       </div>
     );
   });
+};
+
+// 3D Tilt and Cursor Glare Card Component
+const WidgetCard = ({ className = "", children, span2 = false, onBtnClick }) => {
+  const cardRef = useRef(null);
+
+  const handleMouseMove = (e) => {
+    const card = cardRef.current;
+    if (!card) return;
+    const rect = card.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const xc = rect.width / 2;
+    const yc = rect.height / 2;
+    const rotateX = ((yc - y) / yc) * 6; // Max 6deg tilt
+    const rotateY = ((x - xc) / xc) * 6;
+
+    card.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) translateY(-2px)`;
+    card.style.setProperty("--mx", `${(x / rect.width) * 100}%`);
+    card.style.setProperty("--my", `${(y / rect.height) * 100}%`);
+  };
+
+  const handleMouseLeave = () => {
+    const card = cardRef.current;
+    if (!card) return;
+    card.style.transform = "perspective(1000px) rotateX(0deg) rotateY(0deg) translateY(0px)";
+    card.style.setProperty("--mx", "50%");
+    card.style.setProperty("--my", "50%");
+  };
+
+  return (
+    <div
+      ref={cardRef}
+      className={`widget-card ${span2 ? "widget-span-2" : ""} ${className}`}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      onClick={onBtnClick}
+    >
+      {children}
+    </div>
+  );
 };
 
 function App() {
@@ -37,6 +81,7 @@ function App() {
   const [accentColor, setAccentColor] = useState("#ff3e3e");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [matrixEnabled, setMatrixEnabled] = useState(true);
+  const [zenMode, setZenMode] = useState(false);
 
   // ── Collapsible Bottom Panel State ──
   const [panelOpen, setPanelOpen] = useState(false);
@@ -64,6 +109,11 @@ function App() {
   const rafRef = useRef(null);
   const audioCtxRef = useRef(null);
 
+  // Mouse coords and spring orb tracking
+  const mouseCoordsRef = useRef({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+  const orbCoordsRef = useRef({ x: 0, y: 0 });
+  const orbPulseRef = useRef(0);
+
   // Read config settings inside requestAnimationFrame without recreating callback
   const use24hRef = useRef(use24h);
   const soundEnabledRef = useRef(soundEnabled);
@@ -77,7 +127,16 @@ function App() {
     soundEnabledRef.current = soundEnabled;
   }, [soundEnabled]);
 
-  // ── 1. Web Audio Tick Sound ──
+  // Window mouse movement listener for the ambient orb
+  useEffect(() => {
+    const handleWindowMouseMove = (e) => {
+      mouseCoordsRef.current = { x: e.clientX, y: e.clientY };
+    };
+    window.addEventListener("mousemove", handleWindowMouseMove);
+    return () => window.removeEventListener("mousemove", handleWindowMouseMove);
+  }, []);
+
+  // ── 1. Web Audio Sound Synthesizers ──
   const ensureAudio = () => {
     if (!audioCtxRef.current) {
       audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
@@ -121,6 +180,37 @@ function App() {
     } catch (_) {}
   };
 
+  const playClickSound = () => {
+    if (!soundEnabledRef.current) return;
+    try {
+      ensureAudio();
+      const ctx = audioCtxRef.current;
+      const osc1 = ctx.createOscillator();
+      const osc2 = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc1.type = "sine";
+      osc1.frequency.setValueAtTime(2200, ctx.currentTime);
+      osc1.frequency.exponentialRampToValueAtTime(150, ctx.currentTime + 0.03);
+
+      osc2.type = "triangle";
+      osc2.frequency.setValueAtTime(800, ctx.currentTime);
+      osc2.frequency.exponentialRampToValueAtTime(60, ctx.currentTime + 0.03);
+
+      gain.gain.setValueAtTime(0.05, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.03);
+
+      osc1.connect(gain);
+      osc2.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc1.start();
+      osc2.start();
+      osc1.stop(ctx.currentTime + 0.04);
+      osc2.stop(ctx.currentTime + 0.04);
+    } catch (_) {}
+  };
+
   // ── 2. Dials rotation helper ──
   const setDialAngles = (totalSec) => {
     const secsAngle = 90 - (totalSec * 6);
@@ -145,6 +235,23 @@ function App() {
 
       setDialAngles(totalSec);
 
+      // Relative parallax spring physics for mouse-following ambient orb
+      const orb = orbCoordsRef.current;
+      const target = mouseCoordsRef.current;
+      const nx = (target.x - window.innerWidth / 2) / (window.innerWidth / 2 || 1);
+      const ny = (target.y - window.innerHeight / 2) / (window.innerHeight / 2 || 1);
+      const targetX = nx * 35; // max 35px relative parallax offset
+      const targetY = ny * 35;
+      
+      orb.x += (targetX - orb.x) * 0.08;
+      orb.y += (targetY - orb.y) * 0.08;
+      
+      const orbEl = document.getElementById("orb-1");
+      if (orbEl) {
+        orbEl.style.transform = `translate(calc(-50% + ${orb.x}px), calc(-50% + ${orb.y}px))`;
+        orbEl.style.opacity = 0.18;
+      }
+
       let displayH = h;
       if (!use24hRef.current) displayH = h % 12 || 12;
 
@@ -153,7 +260,7 @@ function App() {
       setSecText(String(s).padStart(2, "0"));
 
       const DAYS = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
-      const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+      const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "Nov", "DEC"];
       setDayText(DAYS[now.getDay()]);
       setDateText(`${now.getDate()} ${MONTHS[now.getMonth()]} ${now.getFullYear()}`);
 
@@ -294,11 +401,21 @@ function App() {
     ensureAudio();
     const nextSound = !soundEnabled;
     setSoundEnabled(nextSound);
-    if (nextSound) playManualTick();
+    if (nextSound) {
+      playManualTick();
+    } else {
+      playClickSound();
+    }
   };
 
   const handleSettingsToggle = () => {
+    playClickSound();
     setSettingsOpen(!settingsOpen);
+  };
+
+  const toggleZenMode = () => {
+    playClickSound();
+    setZenMode(!zenMode);
   };
 
   const containerStyle = {
@@ -310,21 +427,31 @@ function App() {
   const batteryOffset = batteryCircumference * (1 - batteryPercent / 100);
 
   return (
-    <div className="clock-screen" style={containerStyle}>
-      {/* Dynamic Screen Matrix LCD Pixel overlay filter */}
-      <div className={`matrix-overlay ${!matrixEnabled ? "matrix-hidden" : ""}`}></div>
+    <div
+      className={`clock-screen ${zenMode ? "zen-mode" : ""}`}
+      style={containerStyle}
+      onDoubleClick={(e) => {
+        if (e.target.classList.contains("clock-screen") || e.target.classList.contains("clock-core")) {
+          toggleZenMode();
+        }
+      }}
+    >
+      {/* Interactive Dot Matrix Canvas Background */}
+      <InteractiveGrid accentColor={accentColor} />
 
-      {/* Background elements */}
-      <div className="grid-background"></div>
-      <div className={`glow-orb ${!orbsEnabled ? "orbs-hidden" : ""}`} id="orb-1"></div>
+      {/* Dynamic Screen Matrix LCD Pixel overlay filter */}
+      {/* Glow Orbs background */}
       <div className={`glow-orb ${!orbsEnabled ? "orbs-hidden" : ""}`} id="orb-2"></div>
 
       {/* Clock Core Display */}
       <div className="clock-core">
-        <div className="hour-display" id="hour-val">{hourText}</div>
+        {/* Dynamic Screen Matrix LCD Pixel overlay filter inside the clock core only */}
+        <div className={`matrix-overlay ${!matrixEnabled ? "matrix-hidden" : ""}`}></div>
+
+        <div className="hour-display" id="hour-val" key={hourText}>{hourText}</div>
 
         <div className="selection-capsule" id="capsule">
-          <span className="capsule-value" id="capsule-min">{minText}</span>
+          <span className="capsule-value" id="capsule-min" key={minText}>{minText}</span>
           <span className="capsule-divider"></span>
           <span className="capsule-sec-value" id="capsule-sec">{secText}</span>
         </div>
@@ -335,11 +462,14 @@ function App() {
           id="dials-container"
           ref={dialsContainerRef}
         >
+          {/* Anchored under dials container */}
+          <div className={`glow-orb ${!orbsEnabled ? "orbs-hidden" : ""}`} id="orb-1"></div>
+
           <div className="dial dial-outer" id="dial-outer" ref={dialOuterRef}>
-            <DialTicks radius={480} isInner={false} />
+            <DialTicks radius={480} isInner={false} activeVal={parseInt(secText, 10)} />
           </div>
           <div className="dial dial-inner" id="dial-inner" ref={dialInnerRef}>
-            <DialTicks radius={360} isInner={true} />
+            <DialTicks radius={360} isInner={true} activeVal={parseInt(minText, 10)} />
           </div>
         </div>
       </div>
@@ -347,7 +477,7 @@ function App() {
       {/* Widgets Dashboard Grid Sidebar */}
       <div className="widgets-container">
         {/* Widget 1: Calendar */}
-        <div className="widget-card widget-span-2">
+        <WidgetCard span2={true}>
           <div className="widget-header">
             <span>Calendar</span>
             <i className="fa-regular fa-calendar-days"></i>
@@ -371,10 +501,10 @@ function App() {
               ))}
             </div>
           </div>
-        </div>
+        </WidgetCard>
 
         {/* Widget 2: Weather */}
-        <div className="widget-card">
+        <WidgetCard>
           <div className="widget-header">
             <span>Weather</span>
             <i className="fa-solid fa-cloud-sun"></i>
@@ -396,10 +526,10 @@ function App() {
               </div>
             </div>
           </div>
-        </div>
+        </WidgetCard>
 
         {/* Widget 3: Battery */}
-        <div className="widget-card">
+        <WidgetCard>
           <div className="widget-header">
             <span>Battery</span>
             <i className="fa-solid fa-battery-three-quarters"></i>
@@ -424,10 +554,10 @@ function App() {
               </div>
             </div>
           </div>
-        </div>
+        </WidgetCard>
 
         {/* Widget 4: Quick Controls */}
-        <div className="widget-card widget-span-2">
+        <WidgetCard span2={true}>
           <div className="widget-header">
             <span>Quick Settings</span>
             <i className="fa-solid fa-sliders"></i>
@@ -438,7 +568,10 @@ function App() {
               <div className="quick-toggle-container">
                 <button
                   className={`quick-toggle-btn ${use24h ? "active" : ""}`}
-                  onClick={() => setUse24h(!use24h)}
+                  onClick={() => {
+                    playClickSound();
+                    setUse24h(!use24h);
+                  }}
                   title="Toggle 24-Hour Format"
                 >
                   <i className="fa-regular fa-clock"></i>
@@ -462,7 +595,10 @@ function App() {
               <div className="quick-toggle-container">
                 <button
                   className={`quick-toggle-btn ${orbsEnabled ? "active" : ""}`}
-                  onClick={() => setOrbsEnabled(!orbsEnabled)}
+                  onClick={() => {
+                    playClickSound();
+                    setOrbsEnabled(!orbsEnabled);
+                  }}
                   title="Toggle Glow Orbs"
                 >
                   <i className="fa-solid fa-circle-half-stroke"></i>
@@ -474,23 +610,41 @@ function App() {
               <div className="quick-toggle-container">
                 <button
                   className={`quick-toggle-btn ${matrixEnabled ? "active" : ""}`}
-                  onClick={() => setMatrixEnabled(!matrixEnabled)}
+                  onClick={() => {
+                    playClickSound();
+                    setMatrixEnabled(!matrixEnabled);
+                  }}
                   title="Toggle LCD Matrix Filter"
                 >
                   <i className="fa-solid fa-border-all"></i>
                 </button>
                 <span className="quick-toggle-label">Matrix</span>
               </div>
+
+              {/* Zen Mode toggle */}
+              <div className="quick-toggle-container">
+                <button
+                  className={`quick-toggle-btn ${zenMode ? "active-accent" : ""}`}
+                  onClick={toggleZenMode}
+                  title="Toggle Zen Focus Mode"
+                >
+                  <i className="fa-solid fa-spa"></i>
+                </button>
+                <span className="quick-toggle-label">Zen</span>
+              </div>
             </div>
           </div>
-        </div>
+        </WidgetCard>
       </div>
 
       {/* Collapsible Status & Navigation Capsule */}
       <div className={`bottom-panel ${panelOpen ? "open" : ""}`}>
         <button
           className="panel-toggle-btn"
-          onClick={() => setPanelOpen(!panelOpen)}
+          onClick={() => {
+            playClickSound();
+            setPanelOpen(!panelOpen);
+          }}
           title={panelOpen ? "Collapse Navigation" : "Expand Navigation"}
         >
           <i className={`fa-solid ${panelOpen ? "fa-chevron-down" : "fa-chevron-up"}`}></i>
@@ -568,7 +722,10 @@ function App() {
                   key={color.hex}
                   className={`accent-dot ${accentColor === color.hex ? "active" : ""}`}
                   style={{ background: color.hex, color: color.hex }}
-                  onClick={() => setAccentColor(color.hex)}
+                  onClick={() => {
+                    playClickSound();
+                    setAccentColor(color.hex);
+                  }}
                   title={color.name}
                 ></button>
               ))}
@@ -583,7 +740,10 @@ function App() {
                 type="checkbox"
                 id="fmt-toggle"
                 checked={use24h}
-                onChange={(e) => setUse24h(e.target.checked)}
+                onChange={(e) => {
+                  playClickSound();
+                  setUse24h(e.target.checked);
+                }}
               />
               <label htmlFor="fmt-toggle" className="switch-slider"></label>
             </div>
@@ -597,7 +757,10 @@ function App() {
                 type="checkbox"
                 id="orb-toggle"
                 checked={orbsEnabled}
-                onChange={(e) => setOrbsEnabled(e.target.checked)}
+                onChange={(e) => {
+                  playClickSound();
+                  setOrbsEnabled(e.target.checked);
+                }}
               />
               <label htmlFor="orb-toggle" className="switch-slider"></label>
             </div>
@@ -613,6 +776,7 @@ function App() {
                 checked={soundEnabled}
                 onChange={(e) => {
                   ensureAudio();
+                  playClickSound();
                   setSoundEnabled(e.target.checked);
                 }}
               />
@@ -628,7 +792,10 @@ function App() {
                 type="checkbox"
                 id="matrix-setting-toggle"
                 checked={matrixEnabled}
-                onChange={(e) => setMatrixEnabled(e.target.checked)}
+                onChange={(e) => {
+                  playClickSound();
+                  setMatrixEnabled(e.target.checked);
+                }}
               />
               <label htmlFor="matrix-setting-toggle" className="switch-slider"></label>
             </div>
